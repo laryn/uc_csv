@@ -24,8 +24,9 @@ function uc_csv_schema() {
         'not null' => TRUE),
       'last_exported' => array(
         'description' => 'The date of the last export',
-        'mysql_type' => 'datetime',
-        'type' => NULL),
+        'type' => 'datetime',
+        'size' => 'normal',
+        'not null' => TRUE),
       'last_order_id' => array(
         'description' => 'The last order id exported',
         'type' => 'int',
@@ -54,7 +55,7 @@ function uc_csv_schema() {
       'file_type' => array(
         'description' => 'The type of file to be exported',
         'type' => 'varchar',
-        'length' => 8,
+        'length' => 3,
         'not null' => TRUE,
         'default' => 'csv'),
       'statuses' => array(
@@ -73,41 +74,51 @@ function uc_csv_schema() {
   return $schema;
 }
 
+/** 
+ * implementation of hook_install()
+ */
+function uc_csv_install() {
+  drupal_install_schema('uc_csv');
+}
+
+/** 
+ * implementation of hook_uninstall()
+ */
+function uc_csv_uninstall() {
+  drupal_uninstall_schema('uc_csv');
+}
+
 /**
  * Add a field for the type of file to be exported with a report
  */
-function uc_csv_update_7203() {
-  db_add_field('uc_csv_reports','file_type',array(
+function uc_csv_update_6203() {
+  $ret = array();
+  db_add_field($ret,'uc_csv_reports','file_type',array(
         'description' => 'The type of file to be exported',
         'type' => 'varchar',
-        'length' => 8,
+        'length' => 3,
         'not null' => TRUE,
         'default' => 'csv'));
+  return $ret;
 }
 
-/**
- * Add a boolean field to determine if last order exported should be tracked per report
- */
-function uc_csv_update_7204() {
-  db_add_field('uc_csv_reports','track',array(
+function uc_csv_update_6204() {
+  $ret = array();
+  db_add_field($ret,'uc_csv_reports','statuses',array(
+    'description' => 'The order statuses to be included in this report',
+    'type' => 'text',
+    'size' => 'medium',
+    'not null' => TRUE));
+  return $ret;
+}
+
+function uc_csv_update_6205() {
+  $ret = array();
+  db_add_field($ret,'uc_csv_reports','track',array(
     'description' => 'Should this report track last exports. Boolean.',
     'type' => 'int',
     'length' => 1,
-    'not null' => TRUE,
-    'default' => '1'));
+    'not null' => TRUE));
+  return $ret;
 }
-
-/**
- * Add a status field. These are order statuses to be included in report exports.
- */
-function uc_csv_update_7205() {
-  db_add_field('uc_csv_reports','statuses',
-    array(
-      'description' => 'The order statuses to be included in this report',
-      'type' => 'text',
-      'not null' => TRUE,
-      'size' => 'medium',
-    )
-  );
-}
-
+  

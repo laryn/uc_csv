@@ -75,44 +75,29 @@ function uc_csv_both_perms() {
 /**
  * implementation of hook_perm();
  */
-function uc_csv_permission() {
-  return array(
-    'administer ubercart csv export settings' => array(
-      'title' => 'Administer CSV Export Settings',
-    ),
-    'export ubercart reports as csv files' => array(
-      'title' => 'Allow report exports as CSV files',
-    ),
+function uc_csv_perm() {
+  return array('administer ubercart csv export settings', 
+               'export ubercart reports as csv files', 
   );
 }
 
 /**
  * implementation of hook_load()
  */
-function uc_csv_report_id_load($id) 
-{
-  if (is_numeric($id)) 
-  {
-    $result = db_query("SELECT * FROM {uc_csv_reports} WHERE rid=:rid;",array(':rid' => $id));
-    $report = $result->fetchObject();
-    if (isset($report->report_name) && $report->report_name) 
-    {
-      return $report;
-    } 
-    else
-    {
+function uc_csv_report_id_load($id) {
+  if (is_numeric($id)) {
+    $result = db_query("SELECT * FROM {uc_csv_reports} WHERE rid='%d';",$id);
+    if ($result == TRUE) {
+      $report = db_fetch_object($result);
+    } else {
       drupal_set_message('Unable to load the requested report. Please report this error with a snapshot of your uc_csv_reports table','error');
       return FALSE;
     }
-  } 
-  else 
-  {
-    return FALSE;
+  return $report;
   }
 }
 
-function uc_csv_report_grid() 
-{
+function uc_csv_report_grid() {
   $i = 0;
   $rows = array();
   $header = array(
@@ -123,15 +108,15 @@ function uc_csv_report_grid()
   );
   
   $result = db_query('SELECT * FROM {uc_csv_reports} ORDER BY report_name ASC');
-  while ($data = $result->fetchObject()) 
-  {
+  while ($data = db_fetch_object($result)) {
+  
     /* if this is an untrackable report, then it is not necessary for list the last exported */
     /* number since it will always be zero */
     if ($data->track < 1)
     {
       $data->last_order_id = 'N/A';
     }
-
+  
     $row = array();
     $row[] = $data->report_name;    
     $row[] = array('data'=>$data->last_exported,'style'=>'text-align: center;'); 
@@ -148,14 +133,13 @@ function uc_csv_report_grid()
       ),
     );
   }
-  $output = theme('table', array('header' => $header, 'rows' => $rows));
+  $output = theme('table', $header, $rows);
   return $output;
 }
 
-function uc_csv_select_report_to_export_submit($form,$form_state) 
-{
-  $result = db_query("SELECT * FROM {uc_csv_reports} WHERE rid=:rid;",array(':rid' => $form_state['values']['rid']));
-  $report = $result->fetchObject();
+function uc_csv_select_report_to_export_submit($form,$form_state) {
+  $result = db_query("SELECT * FROM {uc_csv_reports} WHERE rid='%d';",$form_state['values']['rid']);
+  $report = db_fetch_object($result);
 
   $statuses = array();
   foreach(unserialize($report->statuses) as $key=>$value) 
@@ -164,20 +148,18 @@ function uc_csv_select_report_to_export_submit($form,$form_state)
       $statuses[] = $value;
     }
   }
-
+  
   $selects = array();
-  $country = array();
-  $zone = array();
   $headers = array( 'order_id','last_name','first_name','email_address','order_total','product_count');
   
   /* cache the list of countries and states in memory so we don't have to do repeated lookups */
   $result = db_query("SELECT country_id,country_name FROM {uc_countries}");
-  while($sdata = $result->fetchObject()) {
+  while($sdata = db_fetch_object($result)) {
     $country[$sdata->country_id] = $sdata->country_name;
   }
 
   $result = db_query("SELECT zone_id,zone_code FROM {uc_zones}");
-  while($sdata = $result->fetchObject()) {
+  while($sdata = db_fetch_object($result)) {
     $zone[$sdata->zone_id] = $sdata->zone_code;
   }
   
@@ -222,34 +204,25 @@ function uc_csv_select_report_to_export_submit($form,$form_state)
   $complete_order = array();
   $result = db_query("SELECT o.order_id, o.billing_last_name, o.billing_first_name, o.primary_email,o.order_total, o.product_count".$sel."
                       FROM {uc_orders} o
-                      WHERE o.order_id > :order_id && o.order_status IN ('".join("','",$statuses)."')
-                      ORDER BY ".$orderby,array(':order_id' => $report->last_order_id));
-  while($order = $result->fetchObject()) 
+                      WHERE o.order_id > '".$report->last_order_id."' && o.order_status IN ('".join("','",$statuses)."')
+                      ORDER BY ".$orderby);
+  while($order = db_fetch_object($result)) 
   {
-    /* only deal with the billing stuff if it was selected as part of our order configuration */
-    if ( $report->shipping_address == 1 )
-    {
-      $order->delivery_zone = $zone[$order->delivery_zone];
-      $order->delivery_country = $country[$order->delivery_country];
-    }
-    
-    /* only deal with the billing stuff if it was selected as part of our order configuration */
-    if ( $report->billing_address == 1 )
-    {
-      $order->billing_zone = $zone[$order->billing_zone];
-      $order->billing_country = $country[$order->billing_country];
-    }
-    
+    $order->delivery_zone = $zone[$order->delivery_zone];
+    $order->delivery_country = $country[$order->delivery_country];
+    $order->billing_zone = $zone[$order->billing_zone];
+    $order->billing_country = $country[$order->billing_country];
+  
     if ($report->products == 1) {
       $product = NULL;
       $calc_attribute = array();
       $presults = db_query("SELECT model,title,qty,price,data 
                             FROM {uc_order_products} 
-                            WHERE order_id=:order_id",array(':order_id' => $order->order_id));
-      while($pdata = $presults->fetchObject()) 
+                            WHERE order_id='%d'",$order->order_id);
+      while($pdata = db_fetch_object($presults)) 
       {
         $data = unserialize($pdata->data);
-        if (isset($data['attributes']) && is_array($data['attributes'])) 
+        if (is_array($data['attributes'])) 
         {
           foreach($data['attributes'] as $key=>$attribute) 
           {
@@ -272,24 +245,18 @@ function uc_csv_select_report_to_export_submit($form,$form_state)
       /* we will do this in two queries for now - first we do tax */
       $stResult = db_query("SELECT amount AS sales_tax
                             FROM uc_order_line_items
-                            WHERE order_id = :order_id
-                              AND type=:type",array(':order_id' => $order->order_id, ':type' => 'tax'));
-      $stdata = $stResult->fetchObject();
-      if (isset($order->sales_tax))
-      {
-        $order->sales_tax = $stdata->sales_tax;
-      }
+                            WHERE order_id = '%d'
+                              AND type='tax'",$order->order_id);
+      $stdata = db_fetch_object($stResult);
+      $order->sales_tax = $stdata->sales_tax;
       
       /* use the same sort of query to get the shipping amount */
       $stResult = db_query("SELECT amount AS shipping
                             FROM uc_order_line_items
-                            WHERE order_id = :order_id
-                              AND type=:type",array(':order_id' => $order->order_id,':type' => 'shipping'));
-      $stdata = $stResult->fetchObject();
-      if (isset($order->shipping))
-      {
-        $order->shipping = $stdata->shipping;
-      } 
+                            WHERE order_id = '%d'
+                              AND type='shipping'",$order->order_id);
+      $stdata = db_fetch_object($stResult);
+      $order->shipping = $stdata->shipping;
     }
     $complete_order[] = (array)$order;
   }
@@ -299,15 +266,14 @@ function uc_csv_select_report_to_export_submit($form,$form_state)
   if ($report->track > 0) 
   {
     /* get the max order id for storage */
-    $result = db_query('SELECT MAX(order_id) AS order_id FROM {uc_orders}');
-    $odata = $result->fetchObject();
+    $result = db_query('SELECT max(order_id) AS order_id FROM {uc_orders}');
+    $odata = db_fetch_object($result);
     $max_order = $odata->order_id;
 
     /* insert the max id into our report table */
     $result = db_query("UPDATE {uc_csv_reports} 
-                        SET last_order_id=:last_order_id, last_exported=:last_exported
-                        WHERE rid=:rid;",array(':last_order_id' => $max_order,':last_exported' => date('Y-m-d H:i:s',time()),
-                                               ':rid' => $form_state['values']['rid']));
+                        SET last_order_id='%d', last_exported='%s'
+                        WHERE rid='%d';",$max_order,date('Y-m-d H:i:s',time()),$form_state['values']['rid']); 
   }
   
   /* name the report file name after the given name for this report, just make it filename friendly */
@@ -324,7 +290,6 @@ function uc_csv_select_report_to_export_submit($form,$form_state)
     header('Pragma: public');
     
     print join(",",$headers)."\n";
-    $source = NULL;
     foreach($complete_order as $order) {
       foreach ($order as $cell) {
         $source .= '"'.$cell.'",';
@@ -353,18 +318,11 @@ function uc_csv_select_report_to_export_submit($form,$form_state)
   }
 }
 
-function uc_csv_add_new_report($form,&$form_state) 
+function uc_csv_add_new_report($form_state,$report=NULL) 
 {
-  $report = $form_state['build_info']['args'];
-  /* if we are creating a new report, then the args will be empty and we will need to initialize */
-  /* our object variables */
-  if ($report == array()) {
+  // if no report is passed, then create the class so we do not get warnings
+  if ($report == NULL) {
     $report = new stdClass();
-    $report->rid = $report->report_name = $report->shipping_address = NULL;
-    $report->billing_address = $report->products = $report->orderby = NULL;
-    $report->track = $report->file_type = NULL;
-  } else {
-    $report = $report[0];
   }
   
   // set up our form of properties for the report being sought.
@@ -373,7 +331,7 @@ function uc_csv_add_new_report($form,&$form_state)
     '#type' => 'hidden',
     '#default_value' => $report->rid,
   );
-
+  
   $form['export_options'] = array(
     '#type' => 'fieldset',
     '#title' => t('Export Options'),
@@ -394,7 +352,7 @@ function uc_csv_add_new_report($form,&$form_state)
     '#weight' => 4,
     '#collapsible' => TRUE,
   );
-
+  
   $form['report_name'] = array(
     '#type' => 'textfield',
     '#title' => t('Report Name'),
@@ -414,7 +372,8 @@ function uc_csv_add_new_report($form,&$form_state)
   if ( $report->products ) {
     $default_options[] = 'products'; 
   }
-
+  
+  
   $form['export_options']['options'] = array(
     '#type' => 'checkboxes',
     '#title' => t('Export Options'),
@@ -426,7 +385,7 @@ function uc_csv_add_new_report($form,&$form_state)
     ),
 	'#description' => t('Select the information you want exported in your report'),
   );
-
+  
   /* get a list of the order statuses available/created */
   $statuses = array();
   
@@ -440,7 +399,7 @@ function uc_csv_add_new_report($form,&$form_state)
   $result = db_query("SELECT order_status_id,title,state
                       FROM {uc_order_statuses}
                       ORDER BY weight ASC"); 
-  while($sdata = $result->fetchObject()) 
+  while($sdata = db_fetch_object($result)) 
   {
     $statuses[$sdata->order_status_id] = $sdata->title;
   }
@@ -451,6 +410,7 @@ function uc_csv_add_new_report($form,&$form_state)
     '#options' => $statuses,
   	'#description' => t('Select the order statuses to be exported in this report.'),
   );
+
 
   $form['other']['orderby'] = array(
     '#type' => 'select',
@@ -487,6 +447,7 @@ function uc_csv_add_new_report($form,&$form_state)
     '#value' => t('Update Report Options'),
     '#weight' => 5,
   );
+  $form['#redirect'] = array('admin/store/export/reports');
   return $form;
 }
 
@@ -512,7 +473,7 @@ function uc_csv_add_new_report_submit($form,$form_state)
   } else {
     $array = array(
       'report_name' => $form_state['values']['report_name'],
-      'last_exported' => date('Y-m-d H:i:s'),
+      'last_exported' => 0,
       'last_order_id' => 0,
       'shipping_address' => $shipping,
       'billing_address' => $billing,
@@ -529,19 +490,16 @@ function uc_csv_add_new_report_submit($form,$form_state)
   } else {
     drupal_set_message("Your report could not be saved. Please submit a bug report",'error');
   }
-  drupal_goto('admin/store/export/reports');
+  return;
 }
 
-function uc_csv_select_report_to_export($form_state) 
-{
-  $options = array();
-  $reports = FALSE;
+function uc_csv_select_report_to_export($form_state) {
   $result = db_query('SELECT * FROM {uc_csv_reports} ORDER BY report_name ASC;');
-  while ($ldata = $result->fetchObject()) {
-    $reports = TRUE;
-    $options[$ldata->rid] = $ldata->report_name;
-  }
-  if ($reports == TRUE) {
+  if ($result == TRUE) {
+    $options = array();
+    while ($ldata = db_fetch_object($result)) {
+      $options[$ldata->rid] = $ldata->report_name;
+    }
     $form = array();
     $form['rid'] = array (
       '#type' => 'select',
@@ -552,10 +510,11 @@ function uc_csv_select_report_to_export($form_state)
       '#type' => 'submit',
       '#value' => t('Export Selected Report'),
     );
+    $form['#redirect'] = array('admin/store/export/reports');
     return $form;
   } else {
     drupal_set_message(t('Unable to get list of available reports.'));
-    drupal_goto('admin/store/export/reports');
+    return;
   }
 }
 
@@ -563,6 +522,7 @@ function uc_csv_delete_report($form_state, $report) {
   $form = array();
   $form['rid'] = array('#type' => 'hidden', '#value' => $report->rid);
   $form['report_name'] = array('#type' => 'hidden', '#value' => $report->report_name);
+  $form['#redirect'] = array('admin/store/export/index');
   return confirm_form( $form,
                        t('Are you sure you wish to delete the %report export report?', array('%report' => $report->report_name)),
                        'admin/store/export/index',
@@ -573,10 +533,10 @@ function uc_csv_delete_report($form_state, $report) {
 }
 
 function uc_csv_delete_report_submit($form_state, $form) {
-  db_query("DELETE FROM {uc_csv_reports} WHERE rid=:rid", array(':rid' => (int)$form['values']['rid']));
+  db_query("DELETE FROM {uc_csv_reports} WHERE rid='%d'", (int) $form['values']['rid']);
   drupal_set_message(t('%report report successfully deleted', array('%report' => $form['values']['report_name'])));
-  drupal_goto('admin/store/export/index');
 }
+
 
 function uc_csv_clean_filename($str, $replace=array(), $delimiter='-')
 {
